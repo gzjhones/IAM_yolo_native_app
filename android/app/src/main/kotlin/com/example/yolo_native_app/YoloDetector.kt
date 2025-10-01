@@ -37,14 +37,14 @@ class YoloDetector(private val context: Context) {
             // Cargar labels
             labels = loadLabels()
             
-            println("✅ Modelo cargado exitosamente")
-            println("📊 Input shape: ${interpreter?.getInputTensor(0)?.shape()?.contentToString()}")
-            println("📊 Output shape: ${interpreter?.getOutputTensor(0)?.shape()?.contentToString()}")
-            println("🏷️ Labels: $labels")
+            println("Modelo cargado exitosamente")
+            println("Input shape: ${interpreter?.getInputTensor(0)?.shape()?.contentToString()}")
+            println("Output shape: ${interpreter?.getOutputTensor(0)?.shape()?.contentToString()}")
+            println("Labels: $labels")
             
             true
         } catch (e: Exception) {
-            println("❌ Error cargando modelo: ${e.message}")
+            println("Error cargando modelo: ${e.message}")
             e.printStackTrace()
             false
         }
@@ -78,7 +78,7 @@ class YoloDetector(private val context: Context) {
         return try {
             // Convertir bytes a Bitmap
             val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-            println("🖼️ Imagen original: ${bitmap.width}x${bitmap.height}")
+            println("Imagen original: ${bitmap.width}x${bitmap.height}")
             
             // Redimensionar a 640x640
             val resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
@@ -90,11 +90,11 @@ class YoloDetector(private val context: Context) {
             val outputArray = Array(1) { Array(84) { FloatArray(8400) } }
             
             // Ejecutar inferencia
-            println("🔄 Ejecutando inferencia...")
+            println("Ejecutando inferencia...")
             val startTime = System.currentTimeMillis()
             interpreter?.run(inputArray, outputArray)
             val inferenceTime = System.currentTimeMillis() - startTime
-            println("✅ Inferencia completada en ${inferenceTime}ms")
+            println("Inferencia completada en ${inferenceTime}ms")
             
             // Procesar resultados
             val detections = processOutput(outputArray[0], bitmap.width, bitmap.height)
@@ -129,7 +129,7 @@ class YoloDetector(private val context: Context) {
         val detections = mutableListOf<Detection>()
         val confidenceThreshold = 0.50f  // Subir el umbral
         
-        println("🔍 Procesando ${output[0].size} detecciones potenciales...")
+        println("Procesando ${output[0].size} detecciones potenciales...")
         
         // YOLOv11 base: output[0-3]=coords, output[4-83]=80 clases
         for (i in 0 until 8400) {
@@ -173,7 +173,7 @@ class YoloDetector(private val context: Context) {
             }
         }
         
-        println("🎯 Detecciones encontradas: ${detections.size}")
+        println("Detecciones encontradas: ${detections.size}")
         return applyNMS(detections)
     }
     

@@ -54,7 +54,7 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
       final bool result = await platform.invokeMethod('loadModel');
       setState(() {
         isModelLoaded = result;
-        status = result ? 'Modelo cargado ✓' : 'Error cargando modelo';
+        status = result ? 'Modelo cargado' : 'Error cargando modelo';
       });
     } catch (e) {
       setState(() => status = 'Error: $e');
@@ -71,8 +71,8 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
         cameras[0],
         ResolutionPreset.medium,
         enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.yuv420, // Asegurar formato correcto
       );
-      
       await cameraController!.initialize();
       setState(() => status = 'Listo');
       
@@ -137,12 +137,25 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
     final uPlane = image.planes[1];
     final vPlane = image.planes[2];
     
+    // Validar que tenemos suficientes datos
+    if (yPlane.bytes.isEmpty || uPlane.bytes.isEmpty || vPlane.bytes.isEmpty) {
+      print('Error: Planos vacíos');
+      return null;
+    }
+    
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
         final yIndex = y * yPlane.bytesPerRow + x;
-        final uvIndex = (y ~/ 2) * uPlane.bytesPerRow + (x ~/ 2);
         
-        if (yIndex >= yPlane.bytes.length || uvIndex >= uPlane.bytes.length) {
+        // Calcular índice UV con validación
+        final uvRow = y ~/ 2;
+        final uvCol = x ~/ 2;
+        final uvIndex = uvRow * uPlane.bytesPerRow + uvCol;
+        
+        // Validar límites antes de acceder
+        if (yIndex >= yPlane.bytes.length || 
+            uvIndex >= uPlane.bytes.length || 
+            uvIndex >= vPlane.bytes.length) {
           continue;
         }
         
@@ -160,7 +173,6 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
     
     return imgImage;
   }
-  
   @override
   void dispose() {
     cameraController?.dispose();
@@ -199,12 +211,12 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
               painter: DetectionPainter(detections, imageSize!),
             ),
           
-          // Info panel
+          // Info panel - mover a la izquierda vertical
           Positioned(
-            top: 50,
             left: 20,
+            top: 20,
             child: Container(
-              padding: EdgeInsets.all(12),
+              padding: EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: Colors.black.withOpacity(0.7),
                 borderRadius: BorderRadius.circular(8),
@@ -213,38 +225,39 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '🎯 Detecciones: ${detections.length}',
+                    'Detecciones: ${detections.length}',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 16,
+                      fontSize: 14,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  SizedBox(height: 8),
-                  ...detections.take(5).map((d) => Text(
-                    '• ${d.className} (${(d.confidence * 100).toStringAsFixed(1)}%)',
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
+                  SizedBox(height: 6),
+                  ...detections.take(3).map((d) => Text(
+                    '${d.className} (${(d.confidence * 100).toStringAsFixed(1)}%)',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
                   )),
                 ],
               ),
             ),
           ),
-          
-          // Estado
+
+          // Estado - mover a esquina superior derecha
           Positioned(
-            top: 50,
+            top: 20,
             right: 20,
             child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: isModelLoaded ? Colors.green : Colors.red,
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                isModelLoaded ? '● Activo' : '● Cargando',
+                isModelLoaded ? 'Activo' : 'Cargando',
                 style: TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
+                  fontSize: 12,
                 ),
               ),
             ),
@@ -295,18 +308,18 @@ class DetectionPainter extends CustomPainter {
   
   @override
   void paint(Canvas canvas, Size size) {
-    print('🎨 Canvas: ${size.width}x${size.height}');
-    print('🎨 Image size: ${imageSize.width}x${imageSize.height}');
-    print('🎨 Detections: ${detections.length}');
+    print('Canvas: ${size.width}x${size.height}');
+    print('Image size: ${imageSize.width}x${imageSize.height}');
+    print('Detections: ${detections.length}');
     
     // El escalado correcto: de coordenadas de imagen a coordenadas de canvas
     final scaleX = size.width / imageSize.width;
     final scaleY = size.height / imageSize.height;
     
-    print('🎨 Scales: X=$scaleX, Y=$scaleY');
+    print('Scales: X=$scaleX, Y=$scaleY');
     
     for (var detection in detections) {
-      print('📍 Detection: x=${detection.x}, y=${detection.y}, w=${detection.width}, h=${detection.height}');
+      print('Detection: x=${detection.x}, y=${detection.y}, w=${detection.width}, h=${detection.height}');
       
       // Color del bounding box
       final boxPaint = Paint()
@@ -325,7 +338,7 @@ class DetectionPainter extends CustomPainter {
       final right = (detection.x + detection.width / 2) * scaleX;
       final bottom = (detection.y + detection.height / 2) * scaleY;
       
-      print('📦 Box: left=$left, top=$top, right=$right, bottom=$bottom');
+      print('Box: left=$left, top=$top, right=$right, bottom=$bottom');
       
       final rect = Rect.fromLTRB(left, top, right, bottom);
       

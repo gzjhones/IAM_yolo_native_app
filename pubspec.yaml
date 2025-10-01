@@ -16,9 +16,3 @@ dependencies:
 
 flutter:
   uses-material-design: true
-  assets:
-    #- assets/best_float32.tflite
-    #- assets/best_google_colab_float32.tflite
-    #- assets/best_google_colab_v2_float32.tflite
-    - assets/yolo11s_float32.tflite
-    - assets/labels.txt
