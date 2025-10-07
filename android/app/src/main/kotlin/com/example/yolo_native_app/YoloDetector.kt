@@ -37,14 +37,14 @@ class YoloDetector(private val context: Context) {
             // Cargar labels
             labels = loadLabels()
             
-            println("Modelo cargado exitosamente")
-            println("Input shape: ${interpreter?.getInputTensor(0)?.shape()?.contentToString()}")
-            println("Output shape: ${interpreter?.getOutputTensor(0)?.shape()?.contentToString()}")
-            println("Labels: $labels")
+            println("✅ Modelo cargado exitosamente")
+            println("📊 Input shape: ${interpreter?.getInputTensor(0)?.shape()?.contentToString()}")
+            println("📊 Output shape: ${interpreter?.getOutputTensor(0)?.shape()?.contentToString()}")
+            println("🏷️ Labels: $labels")
             
             true
         } catch (e: Exception) {
-            println("Error cargando modelo: ${e.message}")
+            println("❌ Error cargando modelo: ${e.message}")
             e.printStackTrace()
             false
         }
@@ -78,7 +78,7 @@ class YoloDetector(private val context: Context) {
         return try {
             // Convertir bytes a Bitmap
             val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-            println("Imagen original: ${bitmap.width}x${bitmap.height}")
+            println("🖼️ Imagen original: ${bitmap.width}x${bitmap.height}")
             
             // Redimensionar a 640x640
             val resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
@@ -87,14 +87,14 @@ class YoloDetector(private val context: Context) {
             val inputArray = prepareInput(resizedBitmap)
             
             // Preparar output tensor [1, 5, 8400]
-            val outputArray = Array(1) { Array(84) { FloatArray(8400) } }
+            val outputArray = Array(1) { Array(5) { FloatArray(8400) } }
             
             // Ejecutar inferencia
-            println("Ejecutando inferencia...")
+            println("🔄 Ejecutando inferencia...")
             val startTime = System.currentTimeMillis()
             interpreter?.run(inputArray, outputArray)
             val inferenceTime = System.currentTimeMillis() - startTime
-            println("Inferencia completada en ${inferenceTime}ms")
+            println("✅ Inferencia completada en ${inferenceTime}ms")
             
             // Procesar resultados
             val detections = processOutput(outputArray[0], bitmap.width, bitmap.height)
@@ -124,59 +124,77 @@ class YoloDetector(private val context: Context) {
         
         return input
     }
-    
+
     private fun processOutput(output: Array<FloatArray>, imageWidth: Int, imageHeight: Int): List<Detection> {
         val detections = mutableListOf<Detection>()
-        val confidenceThreshold = 0.50f  // Subir el umbral
+        val confidenceThreshold = 0.25f  // Umbral bajo para debugging
         
-        println("Procesando ${output[0].size} detecciones potenciales...")
+        println("🔍 Procesando ${output[0].size} detecciones potenciales...")
         
-        // YOLOv11 base: output[0-3]=coords, output[4-83]=80 clases
+        var validCount = 0
+        
+        // YOLOv11 con 1 clase: output[0]=x, output[1]=y, output[2]=w, output[3]=h, output[4]=confidence
         for (i in 0 until 8400) {
             val xNorm = output[0][i]
             val yNorm = output[1][i]
             val wNorm = output[2][i]
             val hNorm = output[3][i]
+            val confidence = output[4][i]
             
-            // Encontrar la clase con mayor confianza
-            var maxConfidence = 0f
-            var bestClassId = -1
-            
-            for (c in 0 until 80) {
-                val classConf = output[4 + c][i]
-                if (classConf > maxConfidence) {
-                    maxConfidence = classConf
-                    bestClassId = c
-                }
+            // Debug: imprimir las primeras 10 detecciones
+            if (i < 10) {
+                println("Det[$i]: x=%.2f, y=%.2f, w=%.2f, h=%.2f, conf=%.4f".format(xNorm, yNorm, wNorm, hNorm, confidence))
             }
             
-            // Filtrar por confianza
-            if (maxConfidence > confidenceThreshold && wNorm > 0 && hNorm > 0) {
-                // Desnormalizar coordenadas
-                val xModel = xNorm * inputSize
+            // Filtrar por confianza y tamaño válido
+            if (confidence > confidenceThreshold && wNorm > 0 && hNorm > 0) {
+                validCount++
+                
+                if (validCount <= 5) {
+                    println("✅ Detección válida #$validCount: conf=${confidence}")
+                }
+                
+                // CORRECCIÓN: Desnormalizar multiplicando por inputSize (640)
+                // Las coordenadas vienen normalizadas [0-1] respecto al tamaño 640x640
+                val xModel = xNorm * inputSize  // Convertir a coordenadas del modelo
                 val yModel = yNorm * inputSize
                 val wModel = wNorm * inputSize
                 val hModel = hNorm * inputSize
                 
+                // Luego escalar al tamaño original de la imagen
                 val scaleX = imageWidth.toFloat() / inputSize
                 val scaleY = imageHeight.toFloat() / inputSize
+
+                val paddingReduction = 0.50f
                 
                 detections.add(Detection(
-                    classId = bestClassId,
-                    className = if (bestClassId < labels.size) labels[bestClassId] else "class_$bestClassId",
-                    confidence = maxConfidence,
+                    classId = 0,
+                    className = if (labels.isNotEmpty()) labels[0] else "mando_xbox",
+                    confidence = confidence,
                     x = xModel * scaleX,
                     y = yModel * scaleY,
-                    width = wModel * scaleX * 0.85f,
-                    height = hModel * scaleY * 0.85f
+                    width = wModel * scaleX * paddingReduction,  // ← Añadir aquí
+                    height = hModel * scaleY * paddingReduction  // ← Añadir aquí
                 ))
             }
         }
         
-        println("Detecciones encontradas: ${detections.size}")
-        return applyNMS(detections)
+        println("🎯 Detecciones con conf > $confidenceThreshold: $validCount")
+        
+        if (detections.isEmpty()) {
+            println("⚠️ No se encontraron detecciones. Verifica:")
+            println("   - ¿El modelo está entrenado correctamente?")
+            println("   - ¿La iluminación es adecuada?")
+            println("   - ¿El objeto está en el frame?")
+        }
+        
+        // Aplicar NMS
+        val finalDetections = applyNMS(detections)
+        println("🎯 Detecciones finales después de NMS: ${finalDetections.size}")
+        
+        return finalDetections
     }
-    
+   
     private fun applyNMS(detections: List<Detection>, iouThreshold: Float = 0.45f): List<Detection> {
         if (detections.isEmpty()) return emptyList()
         
