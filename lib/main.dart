@@ -4,9 +4,11 @@ import 'package:camera/camera.dart';
 import 'dart:typed_data';
 import 'dart:async';
 import 'package:image/image.dart' as img;
+import 'google_sheets_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  GoogleSheetsService.initialize();
   runApp(MyApp());
 }
 
@@ -42,6 +44,7 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
     super.initState();
     init();
   }
+
   
   Future<void> init() async {
     await loadModel();
