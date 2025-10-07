@@ -37,14 +37,14 @@ class YoloDetector(private val context: Context) {
             // Cargar labels
             labels = loadLabels()
             
-            println("✅ Modelo cargado exitosamente")
-            println("📊 Input shape: ${interpreter?.getInputTensor(0)?.shape()?.contentToString()}")
-            println("📊 Output shape: ${interpreter?.getOutputTensor(0)?.shape()?.contentToString()}")
-            println("🏷️ Labels: $labels")
+            println("Modelo cargado exitosamente")
+            println("Input shape: ${interpreter?.getInputTensor(0)?.shape()?.contentToString()}")
+            println("Output shape: ${interpreter?.getOutputTensor(0)?.shape()?.contentToString()}")
+            println("Labels: $labels")
             
             true
         } catch (e: Exception) {
-            println("❌ Error cargando modelo: ${e.message}")
+            println("Error cargando modelo: ${e.message}")
             e.printStackTrace()
             false
         }
@@ -62,7 +62,7 @@ class YoloDetector(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
-            println("⚠️ Error cargando labels: ${e.message}")
+            println("Error cargando labels: ${e.message}")
             // Fallback si no hay labels.txt
             labelList.add("mando_xbox")
         }
@@ -71,14 +71,14 @@ class YoloDetector(private val context: Context) {
     
     fun detectObjects(imageBytes: ByteArray): List<Detection> {
         if (interpreter == null) {
-            println("❌ Interpreter no inicializado")
+            println("Interpreter no inicializado")
             return emptyList()
         }
         
         return try {
             // Convertir bytes a Bitmap
             val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-            println("🖼️ Imagen original: ${bitmap.width}x${bitmap.height}")
+            println("Imagen original: ${bitmap.width}x${bitmap.height}")
             
             // Redimensionar a 640x640
             val resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
@@ -90,11 +90,11 @@ class YoloDetector(private val context: Context) {
             val outputArray = Array(1) { Array(5) { FloatArray(8400) } }
             
             // Ejecutar inferencia
-            println("🔄 Ejecutando inferencia...")
+            println("Ejecutando inferencia...")
             val startTime = System.currentTimeMillis()
             interpreter?.run(inputArray, outputArray)
             val inferenceTime = System.currentTimeMillis() - startTime
-            println("✅ Inferencia completada en ${inferenceTime}ms")
+            println("Inferencia completada en ${inferenceTime}ms")
             
             // Procesar resultados
             val detections = processOutput(outputArray[0], bitmap.width, bitmap.height)
@@ -104,7 +104,7 @@ class YoloDetector(private val context: Context) {
             
             detections
         } catch (e: Exception) {
-            println("❌ Error en detección: ${e.message}")
+            println("Error en deteccion: ${e.message}")
             e.printStackTrace()
             emptyList()
         }
@@ -127,9 +127,9 @@ class YoloDetector(private val context: Context) {
 
     private fun processOutput(output: Array<FloatArray>, imageWidth: Int, imageHeight: Int): List<Detection> {
         val detections = mutableListOf<Detection>()
-        val confidenceThreshold = 0.25f  // Umbral bajo para debugging
+        val confidenceThreshold = 0.25f
         
-        println("🔍 Procesando ${output[0].size} detecciones potenciales...")
+        println("Procesando ${output[0].size} detecciones potenciales...")
         
         var validCount = 0
         
@@ -151,12 +151,11 @@ class YoloDetector(private val context: Context) {
                 validCount++
                 
                 if (validCount <= 5) {
-                    println("✅ Detección válida #$validCount: conf=${confidence}")
+                    println("Deteccion valida #$validCount: conf=${confidence}")
                 }
                 
-                // CORRECCIÓN: Desnormalizar multiplicando por inputSize (640)
-                // Las coordenadas vienen normalizadas [0-1] respecto al tamaño 640x640
-                val xModel = xNorm * inputSize  // Convertir a coordenadas del modelo
+                // Desnormalizar multiplicando por inputSize (640)
+                val xModel = xNorm * inputSize
                 val yModel = yNorm * inputSize
                 val wModel = wNorm * inputSize
                 val hModel = hNorm * inputSize
@@ -173,24 +172,24 @@ class YoloDetector(private val context: Context) {
                     confidence = confidence,
                     x = xModel * scaleX,
                     y = yModel * scaleY,
-                    width = wModel * scaleX * paddingReduction,  // ← Añadir aquí
-                    height = hModel * scaleY * paddingReduction  // ← Añadir aquí
+                    width = wModel * scaleX * paddingReduction,
+                    height = hModel * scaleY * paddingReduction
                 ))
             }
         }
         
-        println("🎯 Detecciones con conf > $confidenceThreshold: $validCount")
+        println("Detecciones con conf > $confidenceThreshold: $validCount")
         
         if (detections.isEmpty()) {
-            println("⚠️ No se encontraron detecciones. Verifica:")
-            println("   - ¿El modelo está entrenado correctamente?")
-            println("   - ¿La iluminación es adecuada?")
-            println("   - ¿El objeto está en el frame?")
+            println("No se encontraron detecciones. Verifica:")
+            println("   - El modelo esta entrenado correctamente?")
+            println("   - La iluminacion es adecuada?")
+            println("   - El objeto esta en el frame?")
         }
         
         // Aplicar NMS
         val finalDetections = applyNMS(detections)
-        println("🎯 Detecciones finales después de NMS: ${finalDetections.size}")
+        println("Detecciones finales despues de NMS: ${finalDetections.size}")
         
         return finalDetections
     }

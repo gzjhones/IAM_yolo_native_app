@@ -62,7 +62,7 @@ class YoloDetector(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
-            println("⚠️ Error cargando labels: ${e.message}")
+            println("Error cargando labels: ${e.message}")
             // Fallback si no hay labels.txt
             labelList.add("mando_xbox")
         }
@@ -71,7 +71,7 @@ class YoloDetector(private val context: Context) {
     
     fun detectObjects(imageBytes: ByteArray): List<Detection> {
         if (interpreter == null) {
-            println("❌ Interpreter no inicializado")
+            println("Interpreter no inicializado")
             return emptyList()
         }
         
@@ -104,7 +104,7 @@ class YoloDetector(private val context: Context) {
             
             detections
         } catch (e: Exception) {
-            println("❌ Error en detección: ${e.message}")
+            println("Error en detección: ${e.message}")
             e.printStackTrace()
             emptyList()
         }
