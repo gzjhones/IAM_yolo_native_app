@@ -1,0 +1,13 @@
+{
+  "telegram": {
+    "bot_token": "",
+    "chat_id": "",
+    "threshold": 75
+  },
+
+  "google_sheets": {
+    "enabled": true,
+    "high_confidence_threshold": 70,
+    "low_confidence_threshold": 40
+  }
+}
