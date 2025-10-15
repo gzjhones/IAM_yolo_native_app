@@ -14,6 +14,9 @@ dependencies:
   permission_handler: ^11.0.1
   image: ^4.0.17
   http: ^1.1.0
+  shared_preferences: ^2.2.2
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/services_config.json

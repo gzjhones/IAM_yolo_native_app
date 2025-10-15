@@ -4,9 +4,21 @@ import 'package:camera/camera.dart';
 import 'dart:typed_data';
 import 'dart:async';
 import 'package:image/image.dart' as img;
+import 'google_sheets_service.dart';
+import 'telegram_service.dart';
+import 'config_manager.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Cargar configuración desde archivo
+  await ConfigManager.load();
+  ConfigManager.printConfig();
+  
+  // Inicializar servicios
+  GoogleSheetsService.initialize();
+  await TelegramService.initialize();
+  
   runApp(MyApp());
 }
 
@@ -27,7 +39,7 @@ class YoloDetectionPage extends StatefulWidget {
   _YoloDetectionPageState createState() => _YoloDetectionPageState();
 }
 
-class _YoloDetectionPageState extends State<YoloDetectionPage> {
+class _YoloDetectionPageState extends State<YoloDetectionPage> with WidgetsBindingObserver {
   static const platform = MethodChannel('yolo_detector');
   
   CameraController? cameraController;
@@ -35,12 +47,30 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
   bool isModelLoaded = false;
   bool isDetecting = false;
   String status = 'Inicializando...';
-  Size? imageSize; // Tamaño real de la imagen
+  Size? imageSize;
   
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     init();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    final CameraController? cameraCtrl = cameraController;
+    
+    if (cameraCtrl == null || !cameraCtrl.value.isInitialized) {
+      return;
+    }
+
+    if (state == AppLifecycleState.inactive) {
+      cameraCtrl.dispose();
+    } else if (state == AppLifecycleState.resumed) {
+      initCamera();
+    }
   }
   
   Future<void> init() async {
@@ -67,27 +97,41 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
       setState(() => status = 'Inicializando cámara...');
       
       final cameras = await availableCameras();
+      
+      if (cameraController != null) {
+        await cameraController!.dispose();
+        cameraController = null;
+      }
+      
       cameraController = CameraController(
         cameras[0],
         ResolutionPreset.medium,
         enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.yuv420, // Asegurar formato correcto
+        imageFormatGroup: ImageFormatGroup.yuv420,
       );
+      
       await cameraController!.initialize();
+      
+      if (!mounted) return;
+      
       setState(() => status = 'Listo');
       
       startDetection();
     } catch (e) {
+      if (!mounted) return;
       setState(() => status = 'Error cámara: $e');
       print('Error inicializando cámara: $e');
     }
   }
   
   void startDetection() {
+    if (cameraController == null || !cameraController!.value.isInitialized) {
+      return;
+    }
+    
     cameraController!.startImageStream((CameraImage image) async {
-      if (!isDetecting && isModelLoaded) {
+      if (!isDetecting && isModelLoaded && mounted) {
         isDetecting = true;
-        // Guardar el tamaño real de la imagen
         imageSize = Size(image.width.toDouble(), image.height.toDouble());
         await detectObjects(image);
         isDetecting = false;
@@ -99,15 +143,17 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
     try {
       final bytes = await convertImageToBytes(cameraImage);
       
-      if (bytes != null) {
+      if (bytes != null && mounted) {
         final List<dynamic> results = await platform.invokeMethod(
           'detectObjects',
           {'image': bytes},
         );
         
-        setState(() {
-          detections = results.map((d) => Detection.fromMap(d)).toList();
-        });
+        if (mounted) {
+          setState(() {
+            detections = results.map((d) => Detection.fromMap(d)).toList();
+          });
+        }
       }
     } catch (e) {
       print('Error en detección: $e');
@@ -119,7 +165,8 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
       img.Image? imgImage = convertYUV420ToImage(image);
       
       if (imgImage != null) {
-        return Uint8List.fromList(img.encodeJpg(imgImage, quality: 85));
+        // Calidad 95 para mejor color
+        return Uint8List.fromList(img.encodeJpg(imgImage, quality: 95));
       }
     } catch (e) {
       print('Error convirtiendo imagen: $e');
@@ -137,9 +184,7 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
     final uPlane = image.planes[1];
     final vPlane = image.planes[2];
     
-    // Validar que tenemos suficientes datos
     if (yPlane.bytes.isEmpty || uPlane.bytes.isEmpty || vPlane.bytes.isEmpty) {
-      print('Error: Planos vacíos');
       return null;
     }
     
@@ -147,25 +192,27 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
       for (int x = 0; x < width; x++) {
         final yIndex = y * yPlane.bytesPerRow + x;
         
-        // Calcular índice UV con validación
         final uvRow = y ~/ 2;
         final uvCol = x ~/ 2;
-        final uvIndex = uvRow * uPlane.bytesPerRow + uvCol;
         
-        // Validar límites antes de acceder
+        // CORREGIR AQUÍ: Manejar bytesPerPixel nullable
+        final uvPixelStride = uPlane.bytesPerPixel ?? 1;
+        final uvIndex = uvRow * uPlane.bytesPerRow + uvCol * uvPixelStride;
+        
         if (yIndex >= yPlane.bytes.length || 
             uvIndex >= uPlane.bytes.length || 
             uvIndex >= vPlane.bytes.length) {
           continue;
         }
         
-        final yValue = yPlane.bytes[yIndex];
-        final uValue = uPlane.bytes[uvIndex];
-        final vValue = vPlane.bytes[uvIndex];
+        final yValue = yPlane.bytes[yIndex].toDouble();
+        final uValue = uPlane.bytes[uvIndex].toDouble();
+        final vValue = vPlane.bytes[uvIndex].toDouble();
         
-        final r = (yValue + 1.402 * (vValue - 128)).clamp(0, 255).toInt();
-        final g = (yValue - 0.344136 * (uValue - 128) - 0.714136 * (vValue - 128)).clamp(0, 255).toInt();
-        final b = (yValue + 1.772 * (uValue - 128)).clamp(0, 255).toInt();
+        // Conversión YUV420 a RGB mejorada
+        final r = (yValue + 1.370705 * (vValue - 128)).clamp(0, 255).toInt();
+        final g = (yValue - 0.337633 * (uValue - 128) - 0.698001 * (vValue - 128)).clamp(0, 255).toInt();
+        final b = (yValue + 1.732446 * (uValue - 128)).clamp(0, 255).toInt();
         
         imgImage.setPixelRgba(x, y, r, g, b, 255);
       }
@@ -173,8 +220,10 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
     
     return imgImage;
   }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     cameraController?.dispose();
     super.dispose();
   }
@@ -202,16 +251,14 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Cámara
           CameraPreview(cameraController!),
           
-          // Bounding boxes - CORREGIDO
           if (imageSize != null)
             CustomPaint(
               painter: DetectionPainter(detections, imageSize!),
             ),
           
-          // Info panel - mover a la izquierda vertical
+          // Info panel
           Positioned(
             left: 20,
             top: 20,
@@ -242,7 +289,7 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
             ),
           ),
 
-          // Estado - mover a esquina superior derecha
+          // Estado
           Positioned(
             top: 20,
             right: 20,
@@ -262,12 +309,42 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
               ),
             ),
           ),
+          
+          // Indicador de Telegram configurado
+          if (ConfigManager.isTelegramConfigured())
+            Positioned(
+              bottom: 30,
+              right: 30,
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.telegram, color: Colors.white, size: 16),
+                    SizedBox(width: 6),
+                    Text(
+                      '${ConfigManager.getTelegramThreshold()}%',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 }
 
+// Detection y DetectionPainter sin cambios...
 class Detection {
   final int classId;
   final String className;
@@ -302,53 +379,36 @@ class Detection {
 
 class DetectionPainter extends CustomPainter {
   final List<Detection> detections;
-  final Size imageSize; // Tamaño real de la imagen (640x480)
+  final Size imageSize;
   
   DetectionPainter(this.detections, this.imageSize);
   
   @override
   void paint(Canvas canvas, Size size) {
-    print('Canvas: ${size.width}x${size.height}');
-    print('Image size: ${imageSize.width}x${imageSize.height}');
-    print('Detections: ${detections.length}');
-    
-    // El escalado correcto: de coordenadas de imagen a coordenadas de canvas
     final scaleX = size.width / imageSize.width;
     final scaleY = size.height / imageSize.height;
     
-    print('Scales: X=$scaleX, Y=$scaleY');
-    
     for (var detection in detections) {
-      print('Detection: x=${detection.x}, y=${detection.y}, w=${detection.width}, h=${detection.height}');
-      
-      // Color del bounding box
       final boxPaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3.0
         ..color = Colors.greenAccent.withOpacity(0.9);
       
-      // Fondo del label
       final labelBgPaint = Paint()
         ..style = PaintingStyle.fill
         ..color = Colors.greenAccent.withOpacity(0.8);
       
-      // Calcular coordenadas escaladas
       final left = (detection.x - detection.width / 2) * scaleX;
       final top = (detection.y - detection.height / 2) * scaleY;
       final right = (detection.x + detection.width / 2) * scaleX;
       final bottom = (detection.y + detection.height / 2) * scaleY;
       
-      print('Box: left=$left, top=$top, right=$right, bottom=$bottom');
-      
       final rect = Rect.fromLTRB(left, top, right, bottom);
       
-      // Dibujar bounding box
       canvas.drawRect(rect, boxPaint);
       
-      // Dibujar esquinas
       drawCorners(canvas, rect);
       
-      // Label
       final labelText = '${detection.className} ${(detection.confidence * 100).toStringAsFixed(0)}%';
       
       final textSpan = TextSpan(
@@ -367,7 +427,6 @@ class DetectionPainter extends CustomPainter {
       
       textPainter.layout();
       
-      // Fondo del label
       final labelRect = Rect.fromLTWH(
         left,
         top - 22,
@@ -378,7 +437,6 @@ class DetectionPainter extends CustomPainter {
       canvas.drawRect(labelRect, labelBgPaint);
       textPainter.paint(canvas, Offset(left + 4, top - 20));
       
-      // Punto central
       drawCenterPoint(canvas, detection.x * scaleX, detection.y * scaleY);
     }
   }
@@ -390,7 +448,6 @@ class DetectionPainter extends CustomPainter {
       ..strokeWidth = 3.0
       ..color = Colors.cyanAccent;
     
-    // Esquinas
     canvas.drawLine(Offset(rect.left, rect.top), Offset(rect.left + cornerLength, rect.top), cornerPaint);
     canvas.drawLine(Offset(rect.left, rect.top), Offset(rect.left, rect.top + cornerLength), cornerPaint);
     
