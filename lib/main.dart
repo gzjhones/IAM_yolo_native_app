@@ -202,15 +202,23 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Cámara
-          CameraPreview(cameraController!),
-          
-          // Bounding boxes - CORREGIDO
-          if (imageSize != null)
-            CustomPaint(
-              painter: DetectionPainter(detections, imageSize!),
+          // Cámara + bounding boxes, respetando el aspect ratio real del sensor
+          Center(
+            child: AspectRatio(
+              aspectRatio: cameraController!.value.aspectRatio,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CameraPreview(cameraController!),
+                  if (imageSize != null)
+                    CustomPaint(
+                      painter: DetectionPainter(detections, imageSize!),
+                    ),
+                ],
+              ),
             ),
-          
+          ),
+
           // Info panel - mover a la izquierda vertical
           Positioned(
             left: 20,
