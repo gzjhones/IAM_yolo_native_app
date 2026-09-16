@@ -33,7 +33,21 @@ class YoloDetector(private val context: Context) {
         val x: Float,
         val y: Float,
         val width: Float,
-        val height: Float
+        val height: Float,
+        val trackId: Int = 0
+    )
+
+    // Clases que se muestran/trackean; null = sin filtro (todas las clases del modelo)
+    private val allowedClasses: Set<String>? = setOf("car")
+
+    // Umbrales de confianza tipo ByteTrack: alto para crear/matchear tracks con prioridad,
+    // bajo como piso real de detección (antes se descartaba todo esto en processOutput).
+    private val highConfidenceThreshold = 0.50f
+    private val lowConfidenceThreshold = 0.10f
+
+    private val tracker = ObjectTracker(
+        highConfidenceThreshold = highConfidenceThreshold,
+        lowConfidenceThreshold = lowConfidenceThreshold
     )
 
     fun loadModel(): Boolean {
@@ -50,6 +64,7 @@ class YoloDetector(private val context: Context) {
             }
             val newInterpreter = Interpreter(modelBuffer, options)
             interpreter = newInterpreter
+            tracker.reset()
 
             inspectInputTensor(newInterpreter)
             inspectOutputTensor(newInterpreter)
@@ -125,8 +140,10 @@ class YoloDetector(private val context: Context) {
             }
         } catch (e: Exception) {
             println("⚠️ Error cargando labels: ${e.message}")
-            // Fallback si no hay labels.txt
-            labelList.add("mando_xbox")
+            // Fallback genérico basado en las clases reales del modelo (no asume ningún dataset)
+            for (i in 0 until numClasses) {
+                labelList.add("class_$i")
+            }
         }
         return labelList
     }
@@ -161,12 +178,16 @@ class YoloDetector(private val context: Context) {
 
             // Normalizar a [channels][anchors] sea cual sea el layout real y procesar
             val normalizedOutput = normalizeOutput(rawOutput)
-            val detections = processOutput(normalizedOutput, bitmap.width, bitmap.height)
+            val nmsDetections = processOutput(normalizedOutput, bitmap.width, bitmap.height)
+            val filteredDetections = allowedClasses?.let { allowed ->
+                nmsDetections.filter { it.className in allowed }
+            } ?: nmsDetections
+            val trackedDetections = tracker.update(filteredDetections)
 
             bitmap.recycle()
             resizedBitmap.recycle()
 
-            detections
+            trackedDetections
         } catch (e: Exception) {
             println("❌ Error en detección: ${e.message}")
             e.printStackTrace()
@@ -229,7 +250,6 @@ class YoloDetector(private val context: Context) {
 
     private fun processOutput(output: Array<FloatArray>, imageWidth: Int, imageHeight: Int): List<Detection> {
         val detections = mutableListOf<Detection>()
-        val confidenceThreshold = 0.50f
 
         println("Procesando $numAnchors detecciones potenciales...")
 
@@ -252,8 +272,9 @@ class YoloDetector(private val context: Context) {
                 }
             }
 
-            // Filtrar por confianza
-            if (maxConfidence > confidenceThreshold && wNorm > 0 && hNorm > 0) {
+            // Solo se descarta ruido de fondo aquí; el corte alto/bajo real lo hace el
+            // tracker (ByteTrack) en las dos etapas de matching.
+            if (maxConfidence > lowConfidenceThreshold && wNorm > 0 && hNorm > 0) {
                 // Desnormalizar coordenadas al tamaño real de entrada del modelo
                 val xModel = xNorm * inputWidth
                 val yModel = yNorm * inputHeight

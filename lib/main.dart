@@ -242,7 +242,7 @@ class _YoloDetectionPageState extends State<YoloDetectionPage> {
                   ),
                   SizedBox(height: 6),
                   ...detections.take(3).map((d) => Text(
-                    '${d.className} (${(d.confidence * 100).toStringAsFixed(1)}%)',
+                    'ID:${d.trackId} ${d.className} (${(d.confidence * 100).toStringAsFixed(1)}%)',
                     style: TextStyle(color: Colors.white70, fontSize: 12),
                   )),
                 ],
@@ -280,26 +280,29 @@ class Detection {
   final int classId;
   final String className;
   final double confidence;
+  final int trackId;
   final double x;
   final double y;
   final double width;
   final double height;
-  
+
   Detection({
     required this.classId,
     required this.className,
     required this.confidence,
+    required this.trackId,
     required this.x,
     required this.y,
     required this.width,
     required this.height,
   });
-  
+
   factory Detection.fromMap(Map<dynamic, dynamic> map) {
     return Detection(
       classId: map['classId'] as int,
       className: map['className'] as String,
       confidence: (map['confidence'] as num).toDouble(),
+      trackId: map['trackId'] as int,
       x: (map['x'] as num).toDouble(),
       y: (map['y'] as num).toDouble(),
       width: (map['width'] as num).toDouble(),
@@ -357,7 +360,7 @@ class DetectionPainter extends CustomPainter {
       drawCorners(canvas, rect);
       
       // Label
-      final labelText = '${detection.className} ${(detection.confidence * 100).toStringAsFixed(0)}%';
+      final labelText = 'ID:${detection.trackId} ${detection.className} ${(detection.confidence * 100).toStringAsFixed(0)}%';
       
       final textSpan = TextSpan(
         text: labelText,

@@ -37,6 +37,7 @@ class MainActivity: FlutterActivity() {
                                     "classId" to detection.classId,
                                     "className" to detection.className,
                                     "confidence" to detection.confidence,
+                                    "trackId" to detection.trackId,
                                     "x" to detection.x,
                                     "y" to detection.y,
                                     "width" to detection.width,
